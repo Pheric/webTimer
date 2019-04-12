@@ -176,7 +176,7 @@ func buildGraph() (*bytes.Buffer, error) {
 		xData, yData := []float64{}, []float64{}
 		for j := 0; j < len(timings[i]); j++ {
 			xData = append(xData, float64(j))
-			yData = append(yData, timings[i][j].Seconds() * 100)
+			yData = append(yData, timings[i][j].Seconds() * 1000)
 		}
 
 		series = append(series, chart.ContinuousSeries {
