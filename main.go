@@ -30,6 +30,7 @@ var target *url.URL
 var saveLocation *string
 var burstSize, burstCount *int
 var burstDelay *time.Duration
+var dotted *bool
 
 var timings [][]time.Duration
 var timingLocks []sync.Mutex
@@ -68,6 +69,7 @@ func parseFlags() {
 	burstCount = flag.Int("count", 5, "the number of bursts to send. Higher leads to more accuracy")
 	burstDelay = flag.Duration("delay", 1 * time.Second, "how long to wait between bursts. Defaults to 1s")
 	saveLocation = flag.String("savefile", "./webtimer.png", "where to save the generated graph (PNG format)")
+	dotted = flag.Bool("dotted", false, "whether to connect the dots on the graph")
 	flag.Parse()
 
 	if targetUrl, err := url.Parse(*tgt); err != nil {
@@ -179,15 +181,18 @@ func buildGraph() (*bytes.Buffer, error) {
 			yData = append(yData, timings[i][j].Seconds() * 1000)
 		}
 
-		series = append(series, chart.ContinuousSeries {
-			Style: chart.Style {
+		s := chart.ContinuousSeries {
+			XValues: xData,
+			YValues: yData,
+		}
+		if *dotted {
+			s.Style = chart.Style {
 				Show:             true,
 				StrokeWidth:      chart.Disabled,
 				DotWidth:         1,
-			},
-			XValues: xData,
-			YValues: yData,
-		})
+			}
+		}
+		series = append(series, s)
 	}
 
 	graph := chart.Chart {
