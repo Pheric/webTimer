@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"flag"
 	"fmt"
@@ -30,7 +31,7 @@ var target *url.URL
 var saveLocation *string
 var burstSize, burstCount *int
 var burstDelay *time.Duration
-var dotted *bool
+var graph, dotted, print *bool
 
 var timings [][]time.Duration
 var timingLocks []sync.Mutex
@@ -48,19 +49,13 @@ func main() {
 
 	launch()
 
-	graph, err := buildGraph()
-	if err != nil {
-		log.Printf("An error occurred while generating the chart: %v\n", err)
-		return
+	if *graph {
+		saveGraph()
 	}
 
-	fmt.Println("Webserver listening for connections on port 2500")
-	mux := http.NewServeMux()
-	mux.Handle("/", http.HandlerFunc(func (w http.ResponseWriter, r *http.Request) {
-		_, err := w.Write(graph.Bytes())
-		fmt.Printf("%v\n", err)
-	}))
-	_ = http.ListenAndServe(":2500", mux)
+	if *print {
+		writeData()
+	}
 }
 
 func parseFlags() {
@@ -68,8 +63,10 @@ func parseFlags() {
 	burstSize = flag.Int("size", 100, "the number of concurrent requests to send per burst")
 	burstCount = flag.Int("count", 5, "the number of bursts to send. Higher leads to more accuracy")
 	burstDelay = flag.Duration("delay", 1 * time.Second, "how long to wait between bursts. Defaults to 1s")
-	saveLocation = flag.String("savefile", "./webtimer.png", "where to save the generated graph (PNG format)")
+	graph = flag.Bool("graph", false, "whether to save a graph of the data")
+	saveLocation = flag.String("savefile", "webtimer", "the name of the file to save (no extension). See print, graph options")
 	dotted = flag.Bool("dotted", false, "whether to connect the dots on the graph")
+	print = flag.Bool("print", false, "whether to write the raw data to savefile.txt (form: burst request_number RTT)")
 	flag.Parse()
 
 	if targetUrl, err := url.Parse(*tgt); err != nil {
@@ -212,4 +209,75 @@ func buildGraph() (*bytes.Buffer, error) {
 	err := graph.Render(chart.PNG, &buf)
 
 	return &buf, err
+}
+
+func saveGraph() {
+	g, err := buildGraph()
+	if err != nil {
+		log.Printf("An error occurred while generating the chart: %v\n", err)
+		return
+	}
+
+	errCheck := func (e error) bool {
+		if e != nil {
+			log.Printf("An error occurred while saving the data to disk: %v\n", e)
+			return false
+		}
+		return true
+	}
+
+	f, err := os.Create(fmt.Sprintf("%s.png", *saveLocation))
+	if !errCheck(err) {
+		return
+	}
+
+	w := bufio.NewWriter(f)
+	if _, err = w.Write(g.Bytes()); !errCheck(err) {
+		return
+	}
+
+	if !errCheck(w.Flush()) {
+		return
+	}
+
+	if !errCheck(f.Close()) {
+		return
+	}
+}
+
+func writeData() {
+	errCheck := func (e error) bool {
+		if e != nil {
+			log.Printf("An error occurred while saving the data to disk: %v\n", e)
+			return false
+		}
+		return true
+	}
+
+	f, err := os.Create(fmt.Sprintf("%s.txt", *saveLocation))
+	if !errCheck(err) {
+		return
+	}
+
+	buf := bytes.Buffer{}
+	for i := 0; i < len(timings); i++ {
+		timingLocks[i].Lock()
+		for j := 0; j < len(timings[i]); j++ {
+			buf.Write([]byte(fmt.Sprintf("%d %d %f\n", i, j, timings[i][j].Seconds() * 1000)))
+		}
+		timingLocks[i].Unlock()
+	}
+
+	w := bufio.NewWriter(f)
+	if _, err := w.Write(buf.Bytes()); !errCheck(err) {
+		return
+	}
+
+	if !errCheck(w.Flush()) {
+		return
+	}
+
+	if !errCheck(f.Close()) {
+		return
+	}
 }
